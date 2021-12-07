@@ -1,0 +1,8 @@
+{
+    "git-dependencies": {
+        "direct": {
+            "https://gitlab.com/algodynamics_packages/core.git": "3683751c3f1d02d53a953db1fc4ae7b08c285483"
+        },
+        "indirect": {}
+    }
+}
