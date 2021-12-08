@@ -24,24 +24,6 @@ import IntDict exposing (IntDict)
 
 simpleGraph : G.Graph Data ()
 simpleGraph =
-    -- G.fromNodeLabelsAndEdgePairs
-    --     [ 0, 1, 2, 3, 4, 5, 6, 7, 8 ]
-    --     [ ( 0, 1 )
-    --     , ( 0, 2 )
-    --     , ( 1, 3 )
-    --     , ( 1, 4 )
-    --     , ( 2, 5 )
-    --     , ( 2, 6 )
-    --     , ( 3, 7 )
-    --     , ( 3, 8 )
-    --     , ( 0, 7 )
-    --     , ( 0, 5 )
-    --     , ( 4, 0 )
-    --     , ( 6, 0 )
-    --     , ( 4, 8 )
-    --     , ( 6, 8 )
-    --     , ( 7, 8 )
-    --     ]
     let
         nodes =
             [ G.Node 0 { id="0", label="51", status=Possible }
@@ -75,16 +57,6 @@ simpleGraph =
             , ( e 6 8 )
             , ( e 7 8 )
             ]
-            -- [ e 0 3  
-            -- , e 1 2  
-            -- , e 1 3  
-            -- , e 2 3  
-            -- , e 2 6  
-            -- , e 5 6  
-            -- , e 5 7  
-            -- , e 6 8  
-            -- , e 7 8  
-            -- ]
   in
     G.fromNodesAndEdges nodes edges
 
@@ -101,10 +73,9 @@ type alias Model =
     , prompt : P.Prompt
     , minDist : List Int
     , visited : List Int
-    , parent : Int
+    , active : Int
     , selectednode : Int
     , inputdist : String
-    -- , displaydist : String
     , incoming : List Int
     }
 
@@ -112,14 +83,13 @@ type alias Model =
 init : Model
 init =
     { queue = [0]
-    , prompt = ( """Click on Next Min button to start the algorithm""", P.PromptInfo )
+    , prompt = ( """Click on Next Min button to start the algorithm. 0 is the source node""", P.PromptInfo )
     , minDist = [0, 100, 100, 100, 100, 100, 100, 100, 100]
-    , visited = [1, -1, -1, -1, -1, -1, -1, -1, -1]
+    , visited = [1, 0, 0, 0, 0, 0, 0, 0, 0]
     , selectednode = -1
     , inputdist = ""
-    -- , displaydist = ""
     , incoming = []
-    , parent = 0
+    , active = -1
     }
     
 updatequeue : List Int -> List Int
@@ -134,10 +104,10 @@ selectnode v income model =
     | prompt = ( "You selected node " ++ String.fromInt v ++ ". Please enter the distance in the text box!", P.PromptInfo )
     , selectednode = v
     , incoming = income
+    , inputdist = ""
     }
     else 
     { model
-    -- | displaydist = ""
     | inputdist = ""
     , selectednode = -1
     , prompt = ("Can not update the distance of this node!", P.PromptInfo )
@@ -154,26 +124,15 @@ update msg model =
             selectnode v income model  
         VisMin g ->
             visMin g model 
-        -- UpdateIncoming v ->
-        --     { model
-        --     | incoming = v
-        --     }    
         InsertDist d ->
             { model | inputdist = d }
         Submit ->
             submit model
-            -- { model 
-            -- | displaydist = inputdist
-            -- , inputdist = ""
-            -- }      
-        -- _ ->
-        --     model
-
+        
 findMinFromQueue : List Int -> List Int -> Int -> Int -> Int
 findMinFromQueue dist queue id min =
     let
         idx = Maybe.withDefault -1 (List.head queue)
-        -- dis = Array.fromList dist
     in
     if idx == -1
     then
@@ -188,47 +147,60 @@ checkVisited : List Int -> List Int -> List Int -> List Int
 checkVisited vis que ans =
     let
         idx = Maybe.withDefault -1 (List.head que)
-        -- dis = Array.fromList dist
     in
     if idx == -1
     then 
         ans
-    else if (Maybe.withDefault -1 (get idx vis)) == -1
+    else if (Maybe.withDefault -1 (get idx vis)) == 0
     then 
         checkVisited vis (List.drop 1 que) (ans ++ [idx]) 
     else
         checkVisited vis (List.drop 1 que) ans 
 
+checkAllUpdated : List Int -> Int -> List Int -> Bool
+checkAllUpdated outgoing active distance =
+    let
+         idx = Maybe.withDefault -1 (List.head outgoing)
+         distFromActive = Maybe.withDefault -1 (get active distance) + 1
+         originalDist = Maybe.withDefault -1 (get idx distance)
+    in
+    if idx == -1
+    then 
+        True
+    else if distFromActive >= originalDist
+    then 
+        checkAllUpdated (List.drop 1 outgoing) active distance
+    else 
+        False 
+
 visMin : G.Graph Data () -> Model -> Model
 visMin g model =
     let
-        -- outgoing = (G.alongOutgoingEdges (Maybe.withDefault (defNodeContext n) (G.get n.id g)))
-        -- tempqueue = LE.remove model.parent model.queue
         actualminid = findMinFromQueue model.minDist model.queue -1 100
-        -- if actualminid == -1
-        -- then
-        --     outgoing = []
-        --     tempqueue = updatequeue (model.queue)
-        --     updatedqueue = checkVisited model.visited tempqueue []
-        -- else 
         outgoing = (G.alongOutgoingEdges (Maybe.withDefault (defNodeContext) (G.get actualminid g)))
-            -- tempqueue = updatequeue (model.queue ++ outgoing)
-            -- updatedqueue = checkVisited model.visited tempqueue []
+        outgoingcheck = (G.alongOutgoingEdges (Maybe.withDefault (defNodeContext) (G.get model.active g)))
     in
-    if actualminid == -1    
+    if checkAllUpdated outgoingcheck model.active model.minDist == False
+    then 
+    { model
+    | prompt = ("Update not completed, check discovered nodes to update the distance." , P.PromptInfo)
+    , selectednode = -1
+    , inputdist = ""
+    }
+    else if actualminid == -1    
     then
     { model
-    | parent = actualminid
-    -- , queue = checkVisited model.visited model.queue []
-    -- , visited = updateIndex model.visited actualminid 1
-    , prompt = ("Queue is empty" , P.PromptInfo)
+    | active = actualminid
+    , prompt = ("Queue is empty. Algorithm terminate here!!!" , P.PromptInfo)
     }
     else
     { model
-    | parent = actualminid
+    | active = actualminid
     , queue = LE.remove actualminid (checkVisited model.visited (updatequeue (model.queue ++ outgoing)) [])
     , visited = updateIndex model.visited actualminid 1
-    , prompt = ("New Parent is " ++ String.fromInt actualminid , P.PromptInfo)
+    , prompt = ("New Active Node is " ++ String.fromInt actualminid , P.PromptInfo)
+    , inputdist = ""
+    , selectednode = -1
     }
 
 get nth list = list |> List.drop (nth) |> List.head
@@ -238,9 +210,9 @@ submit model =
     if model.selectednode == -1
     then
     { model 
-    | prompt = ( "Select a Node to proceed.", P.PromptInfo  )
-    -- , displaydist = ""
+    | prompt = ( "Please select a Node to proceed.", P.PromptInfo  )
     , inputdist = ""
+    , selectednode = -1
     }
     else
         checkMin model
@@ -249,60 +221,28 @@ updateIndex : List Int -> Int -> Int -> List Int
 updateIndex a idx replace =
     (List.take idx a) ++ [replace] ++ (List.drop (idx + 1) a)
 
--- checkMin : Model -> Model
--- checkMin model =
---     let
---         distFromParent = (Maybe.withDefault -1 (get model.parent model.minDist)) + 1
---         originalDist = Maybe.withDefault -1 (get model.selectednode model.minDist)
---         -- incomingnodes = model.incoming
---         -- actualmin = Maybe.withDefault -1 (List.minimum (incomingDistArray model.minDist incomingnodes [Maybe.withDefault -1 (get (model.selectednode + 1) model.minDist)]))
---         displaydistint = Maybe.withDefault 100 (String.toInt model.inputdist)
---     in
---     if (distFromParent == displaydistint && distFromParent < originalDist) || (originalDist == displaydistint && distFromParent >= originalDist)
---     then
---     { model
---     | displaydist = model.inputdist
---     , inputdist = ""
---     , prompt = ("Correct distance!!!" ++ String.fromInt displaydistint, P.PromptInfo )
---     , minDist = updateIndex model.minDist model.selectednode displaydistint
---     }
---     else
---     { model
---     | prompt = ("Incorrect distance!!" , P.PromptInfo )
---     , displaydist = ""
---     , inputdist = ""
---     }
-
 checkMin : Model -> Model
 checkMin model =
     let
-        -- distFromParent = (Maybe.withDefault -1 (get model.parent model.minDist)) + 1
         originalDist = Maybe.withDefault -1 (get model.selectednode model.minDist)
-        incomingnodes = model.incoming
-        actualmin = Maybe.withDefault -1 (List.minimum (incomingDistArray model.minDist incomingnodes [Maybe.withDefault -1 (get model.selectednode model.minDist)]))
+        actualmin = Maybe.withDefault -1 (List.minimum (incomingDistArray model.minDist model.incoming [Maybe.withDefault -1 (get model.selectednode model.minDist)]))
         displaydistint = Maybe.withDefault 100 (String.toInt model.inputdist)
     in
     if actualmin == displaydistint
     then
     { model
     | inputdist = ""
-    -- ,displaydist = model.inputdist
-    , prompt = ("Correct distance!!!" ++ String.fromInt displaydistint, P.PromptInfo )
+    , selectednode = -1
+    , prompt = ("Correct distance!!!", P.PromptInfo )
     , minDist = updateIndex model.minDist model.selectednode displaydistint
     }
     else
     { model
     | prompt = ("Incorrect distance!!" , P.PromptInfo )
-    -- , displaydist = ""
     , inputdist = ""
+    , selectednode =-1
     }
 
-
--- odel 
-            -- | displaydist = inputdist
-            -- , inputdist = ""
-            -- }      
-        -- _ ->
 -- defNodeContext : NodeContext Data ()
 defNodeContext = 
     {node={id=-1,label={id="-1",status=Idle,label="DEF NODE"}},incoming=IntDict.empty,outgoing=IntDict.empty}
@@ -312,7 +252,6 @@ incomingDistArray : List Int -> List Int -> List Int -> List Int
 incomingDistArray dist incoming ans =
     let
         idx = Maybe.withDefault -1 (List.head incoming)
-        -- dis = Array.fromList dist
     in
     if idx == -1
     then
@@ -364,14 +303,15 @@ view model =
         { queue, prompt, minDist, visited} =
             model
         disp_queue = concat ["Queue : {",(join " " (List.map String.fromInt (queue))),"}"]
-        disp_dist = concat ["Minimum Dist : {",(join " " (List.map String.fromInt (minDist))),"}"]
+        disp_dist = concat ["Minimum Distance : {",(join " " (List.map String.fromInt (minDist))),"}"]
         disp_vis = concat ["Visited : {",(join " " (List.map String.fromInt (visited))),"}"]
-        disp_enter_dist = concat ["Parent : ", String.fromInt model.parent]
+        disp_enter_dist = concat ["Active Node : ", String.fromInt model.active]
     in
     Html.div
         [ HA.class "experiment-container" ]
         [ Html.div
-            [ HA.class "feedback-container" ]
+            [ HA.class "feedback-container"
+            , HA.style "font-size" "25px" ]
             [ P.show prompt
             ]
         , Html.div
@@ -382,7 +322,7 @@ view model =
             [ HA.class "controls-container"
             , HA.style "padding-bottom" "20px"
             , HA.style "padding-left" "20px" ]
-            [ Html.button [ HE.onClick (VisMin simpleGraph), HA.class "button__action--primary" ] [ Html.text "Next Min" ]
+            [ Html.button [ HE.onClick (VisMin simpleGraph), HA.class "button__action--primary" ] [ Html.text "Visit Min" ]
             ] 
         , Html.div []
             [ viewInput "text" "Enter Distance" model.inputdist InsertDist
