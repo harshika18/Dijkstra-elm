@@ -32,7 +32,6 @@ simpleGraph : G.Graph Data ()
 simpleGraph =
     let
         nodes =
-            -- [0,1,2,3,4,5,6,7,8]
             [ G.Node 0 { id="0", label="51", status=Possible }
             , G.Node 1 { id="1", label="42", status=Possible }
             , G.Node 2 { id="2", label="31", status=Possible }
@@ -64,19 +63,8 @@ simpleGraph =
             , ( e 6 8 )
             , ( e 7 8 )
             ]
-        -- nodeList = List.map (\n -> G.Node n (String.fromInt n)) nodes
-        -- edgeList = List.map (\(n1,n2) -> G.Edge n1 n2 ()) edges
   in
     G.fromNodesAndEdges nodes edges
-    -- G.fromNodesAndEdges nodeList edges
-    -- let
-    --     nodeList = List.map (\n -> G.Node n (String.fromInt n)) model.nodes
-    --     edgeList = List.map (\(n1,n2) -> G.Edge n1 n2 ()) model.edges
-       
-    
-    -- in
-    --     G.fromNodesAndEdges nodeList edgeList
-
 
 type Msg
     = SelectNode (Int, List Int)
@@ -96,7 +84,6 @@ type alias Model =
     , incoming : List Int
     , nodes : List Int 
     , edges : List (Int,Int)
-    , defnode : G.NodeContext Data ()
     }
 
 
@@ -112,7 +99,6 @@ init _ =
     , inputdist = ""
     , incoming = []
     , active = -1
-    , defnode = defNodeContext
     }, RD.generate Got (generateGraph 10 20))
     
 updatequeue : List Int -> List Int
@@ -126,7 +112,6 @@ selectnode v income model =
     { model 
     | prompt = ( "You selected node " ++ String.fromInt v ++ ". Please enter the distance in the text box!", P.PromptInfo )
     , selectednode = v
-    -- , defnode = {model.defnode |} 
     , incoming = income
     , inputdist = ""
     }
@@ -302,13 +287,12 @@ viewGraph g model=
     R.draw
         [ DA.rankDir DA.LR
         ]
-        -- []
         [ R.nodeDrawer
             (RSD.svgDrawNode
                 [ RSDA.onClick (\n -> SelectNode ( n.id, (G.alongIncomingEdges (Maybe.withDefault (defNodeContext) (G.get n.id g)))))
-                -- [ RSDA.onClick (\n -> )
                 , RSDA.strokeColor (strokeColor model.selectednode)
                 , RSDA.strokeWidth (\_ -> 3)
+                ,RSDA.title(\n -> (titleNode model.minDist n.id))
                 ]
             )
         , R.edgeDrawer
@@ -328,6 +312,9 @@ strokeColor selectednode node =
     else 
         C.darkBlue
 
+titleNode : List Int -> Int -> String
+titleNode minDist i =
+    String.fromInt (Maybe.withDefault 100 (get i minDist))
 
 viewInput : String -> String -> String -> (String -> msg) -> Html msg
 viewInput t p v toMsg =
