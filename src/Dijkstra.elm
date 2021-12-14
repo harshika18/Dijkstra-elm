@@ -7,9 +7,12 @@ import Graph as G
 import Html exposing (..)
 import Html.Attributes as HA
 import Html.Events as HE
+import AnalyticsPort exposing (analytics)
 import Core
 import Core.Prompt as P
 import Render as R
+import Random as RD
+import Random.List as RL
 import Render.StandardDrawers as RSD
 import Render.StandardDrawers.Attributes as RSDA
 import Render.StandardDrawers.Types as RSDT
@@ -20,12 +23,16 @@ import Svg.Attributes as SA
 import Parser exposing (number)
 import Dict exposing (Dict)
 import IntDict exposing (IntDict)
-
+import Graph.DOT as GD
+import Color as C
+-- import Css.Colors as C
+-- import Colors exposing (black)
 
 simpleGraph : G.Graph Data ()
 simpleGraph =
     let
         nodes =
+            -- [0,1,2,3,4,5,6,7,8]
             [ G.Node 0 { id="0", label="51", status=Possible }
             , G.Node 1 { id="1", label="42", status=Possible }
             , G.Node 2 { id="2", label="31", status=Possible }
@@ -57,9 +64,18 @@ simpleGraph =
             , ( e 6 8 )
             , ( e 7 8 )
             ]
+        -- nodeList = List.map (\n -> G.Node n (String.fromInt n)) nodes
+        -- edgeList = List.map (\(n1,n2) -> G.Edge n1 n2 ()) edges
   in
     G.fromNodesAndEdges nodes edges
-
+    -- G.fromNodesAndEdges nodeList edges
+    -- let
+    --     nodeList = List.map (\n -> G.Node n (String.fromInt n)) model.nodes
+    --     edgeList = List.map (\(n1,n2) -> G.Edge n1 n2 ()) model.edges
+       
+    
+    -- in
+    --     G.fromNodesAndEdges nodeList edgeList
 
 
 type Msg
@@ -67,6 +83,7 @@ type Msg
     | VisMin (G.Graph Data ())
     | InsertDist String
     | Submit
+    | Got (List Int, List (Int,Int))
 
 type alias Model =
     { queue : List Int
@@ -77,20 +94,26 @@ type alias Model =
     , selectednode : Int
     , inputdist : String
     , incoming : List Int
+    , nodes : List Int 
+    , edges : List (Int,Int)
+    , defnode : G.NodeContext Data ()
     }
 
 
-init : Model
-init =
-    { queue = [0]
+init : () -> (Model,Cmd Msg) 
+init _ =
+    ({ queue = [0]
     , prompt = ( """Click on Next Min button to start the algorithm. 0 is the source node""", P.PromptInfo )
     , minDist = [0, 100, 100, 100, 100, 100, 100, 100, 100]
     , visited = [1, 0, 0, 0, 0, 0, 0, 0, 0]
+    , nodes = [1,2,3,4,5]
+    , edges = []
     , selectednode = -1
     , inputdist = ""
     , incoming = []
     , active = -1
-    }
+    , defnode = defNodeContext
+    }, RD.generate Got (generateGraph 10 20))
     
 updatequeue : List Int -> List Int
 updatequeue q =     
@@ -103,6 +126,7 @@ selectnode v income model =
     { model 
     | prompt = ( "You selected node " ++ String.fromInt v ++ ". Please enter the distance in the text box!", P.PromptInfo )
     , selectednode = v
+    -- , defnode = {model.defnode |} 
     , incoming = income
     , inputdist = ""
     }
@@ -113,7 +137,7 @@ selectnode v income model =
     , prompt = ("Can not update the distance of this node!", P.PromptInfo )
     }
 
-update : Msg -> Model -> Model
+update : Msg -> Model -> (Model, Cmd Msg)
 update msg model =
     let
         { queue, prompt, inputdist} =
@@ -121,13 +145,15 @@ update msg model =
     in
     case msg of
         SelectNode (v,income) ->
-            selectnode v income model  
+            (selectnode v income model, Cmd.none)  
         VisMin g ->
-            visMin g model 
+            (visMin g model,Cmd.none )
         InsertDist d ->
-            { model | inputdist = d }
+            ({ model | inputdist = d },Cmd.none)
         Submit ->
-            submit model
+            (submit model,Cmd.none)
+        Got (m,n) ->
+            ({model | nodes = m, edges = n},Cmd.none)
         
 findMinFromQueue : List Int -> List Int -> Int -> Int -> Int
 findMinFromQueue dist queue id min =
@@ -243,7 +269,7 @@ checkMin model =
     , selectednode =-1
     }
 
--- defNodeContext : NodeContext Data ()
+defNodeContext : G.NodeContext Data ()
 defNodeContext = 
     {node={id=-1,label={id="-1",status=Idle,label="DEF NODE"}},incoming=IntDict.empty,outgoing=IntDict.empty}
 
@@ -271,8 +297,8 @@ type Status
     | Visited
 
 
-viewGraph : G.Graph Data () -> Html.Html Msg
-viewGraph g =
+viewGraph : G.Graph Data () -> Model -> Html.Html Msg
+viewGraph g model=
     R.draw
         [ DA.rankDir DA.LR
         ]
@@ -280,6 +306,9 @@ viewGraph g =
         [ R.nodeDrawer
             (RSD.svgDrawNode
                 [ RSDA.onClick (\n -> SelectNode ( n.id, (G.alongIncomingEdges (Maybe.withDefault (defNodeContext) (G.get n.id g)))))
+                -- [ RSDA.onClick (\n -> )
+                , RSDA.strokeColor (strokeColor model.selectednode)
+                , RSDA.strokeWidth (\_ -> 3)
                 ]
             )
         , R.edgeDrawer
@@ -291,6 +320,14 @@ viewGraph g =
         , R.style "height: 80vh;"
         ]
         g
+
+strokeColor : Int -> G.Node n -> C.Color
+strokeColor selectednode node =
+    if (Maybe.withDefault -1 (Just node.id)) == selectednode then
+        C.red
+    else 
+        C.darkBlue
+
 
 viewInput : String -> String -> String -> (String -> msg) -> Html msg
 viewInput t p v toMsg =
@@ -311,12 +348,12 @@ view model =
         [ HA.class "experiment-container" ]
         [ Html.div
             [ HA.class "feedback-container"
-            , HA.style "font-size" "25px" ]
+            ]
             [ P.show prompt
             ]
         , Html.div
             [ HA.class "observables-container" ]
-            [ viewGraph simpleGraph
+            [ viewGraph simpleGraph model
             ]
         , Html.div
             [ HA.class "controls-container"
@@ -342,10 +379,84 @@ view model =
             [ Html.text disp_enter_dist ]
         ]
 
-main : Program () Model Msg
+-- main : Program () Model Msg
+-- main =
+--     Browser.sandbox
+--         { init = init
+--         , view = view
+--         , update = update
+--         }
+
 main =
-    Browser.sandbox
-        { init = init
-        , view = view
-        , update = update
+    Browser.element
+        { init = Core.init identity analytics init
+        , view = Core.view view
+        , update = Core.update identity analytics update setFresh Nothing Nothing
+        , subscriptions = Core.subscriptions subscriptions
         }
+
+setFresh msg =
+    case msg of
+        -- Init _ ->
+        --     True
+
+        _ ->
+            False
+
+
+subscriptions : Model -> Sub Msg
+subscriptions model =
+    Sub.none
+
+generateGraph : Int -> Int -> RD.Generator (List Int, List (Int,Int))
+generateGraph nodesCnt edgesCnt =
+    RD.list nodesCnt (RD.int 0 (2*nodesCnt))
+    |> RD.andThen (\l -> RD.pair (RD.constant l) 
+                                (generateEdge edgesCnt ([],l) [])
+                 )
+
+
+generateEdge : Int -> (List Int,List Int) -> List (Int,Int) -> RD.Generator (List (Int,Int))
+generateEdge eCnt (selNodes,unSelNodes) edges =
+    if eCnt == 0 then
+        RD.constant edges
+    else if List.length selNodes == 0  && List.length edges == 0 then
+        RL.choices 2 unSelNodes
+        |> RD.andThen (\(l1,l2) -> case l1 of 
+                                    [] ->
+                                        generateEdge eCnt (selNodes,unSelNodes) edges
+                                    [n] -> 
+                                        generateEdge eCnt (List.append selNodes l1,l2) edges
+                                    [n1,n2] ->
+                                        generateEdge (eCnt-1) (List.append selNodes l1, l2) (List.append edges [(n1,n2)])
+                                    n :: ns ->
+                                        let
+                                            newEdges = List.map (\n2 -> (n,n2)) ns 
+                                        in
+                                        generateEdge (eCnt - List.length newEdges) (List.append selNodes l1, l2) (List.append edges newEdges)
+                    )
+    else
+        RL.choose selNodes
+        |> RD.andThen (\(n,l) -> case n of
+                                    Just n1 ->
+                                        if List.length unSelNodes == 0 then
+                                            RL.choose selNodes 
+                                            |> RD.andThen (\(n2_,l2) ->
+                                                case n2_ of
+                                                    Just n2 ->
+                                                       generateEdge (eCnt-1) (selNodes,unSelNodes) ((n1,n2):: edges)
+                                                    Nothing ->
+                                                       generateEdge eCnt (selNodes,unSelNodes) edges 
+                                               )
+                                        else
+                                            RL.choose unSelNodes 
+                                            |> RD.andThen (\(n2_,l2) ->
+                                                case n2_ of
+                                                    Just n2 ->
+                                                       generateEdge (eCnt-1) (n2::selNodes ,l2) ( (n1,n2) :: edges )
+                                                    Nothing ->
+                                                       generateEdge eCnt (selNodes,unSelNodes) edges
+                                               )
+                                    Nothing ->
+                                       generateEdge eCnt (selNodes,unSelNodes) edges
+                     )                   
